@@ -65,7 +65,7 @@ def imagePineline(imgPath):
     # r = WIDTH / float(imgGray.shape[1])
     # dim = (WIDTH, int(imgGray.shape[0] * r))
     # imgResized = cv.resize(imgGray, dim, interpolation=cv.INTER_AREA)
-    plt.figure()
+    plt.figure(figsize=(12, 8))
     plt.subplot(2, 3, 1)
     plt.title("Resized Grayscale Image")
     plt.imshow(imgGray, cmap='gray')
@@ -125,7 +125,7 @@ def imagePineline(imgPath):
     
     drawDebugRois(imgWarped, rois)
 
-def detectMarked(thresh, rois, fillThreshold=0.4):
+def detectMarked(thresh, rois, fillThreshold=0.5):
     H, W = thresh.shape
     results = {}
     optionsMap = {}
@@ -166,10 +166,25 @@ def gradeExam(detectedAnswers, answerKey):
 def drawDebugRois(img, rois):
     imgDebug = img.copy()
     for (yTop, yBottom, xLeft, xRight, quesIdx, optionIdx) in rois:
-        color = (0, 255, 0)
-        thickness = 2
-        cv.rectangle(imgDebug, (xLeft, yTop), (xRight, yBottom), color, thickness)
+        center_x = int((xLeft + xRight) / 2)
+        center_y = int((yTop + yBottom) / 2)
+
+        radius = int(min(yBottom - yTop, xRight - xLeft) * 0.4)
+
+        cv.circle(imgDebug, (center_x, center_y), radius, (0, 255, 255), 2)
+
+        cv.putText(imgDebug, f"{quesIdx}-{optionIdx}",
+                   (center_x - 10, center_y - 10),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1, cv.LINE_AA)
+    
+    plt.figure(figsize=(10, 8))
+    plt.title("Debug ROI Circles")
+    plt.imshow(cv.cvtColor(imgDebug, cv.COLOR_BGR2RGB))
+    plt.axis("off")
+    plt.show()
+
     return imgDebug
+
         
 
 if __name__ == "__main__":
