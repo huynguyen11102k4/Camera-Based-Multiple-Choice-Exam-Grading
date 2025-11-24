@@ -4,53 +4,136 @@ from matplotlib import pyplot as plt
 
 class SheetLayout:
     def __init__(self,
-                 left_ansLeft=0.315,
-                 left_ansRight=0.48,
-                 left_ansTop=0.36,
-                 left_ansBottom=0.975,
-
-                 right_ansLeft=0.535,
-                 right_ansRight=0.70,
-                 right_ansTop=0.36,
-                 right_ansBottom=0.975,
-
-                 questionsPerCol=25,
+                 student_id_left=0.405,
+                 student_id_right=0.555,
+                 student_id_top=0.102,
+                 student_id_bottom=0.250,
+                 student_id_rows=8,
+                 student_id_cols=9,
+                 
+                 quiz_id_left=0.641,
+                 quiz_id_right=0.725,
+                 quiz_id_top=0.102,
+                 quiz_id_bottom=0.250,
+                 quiz_id_rows=8,
+                 quiz_id_cols=5,
+                 
+                 class_id_left=0.796,
+                 class_id_right=0.880,
+                 class_id_top=0.102,
+                 class_id_bottom=0.250,
+                 class_id_rows=8,
+                 class_id_cols=5,
+                 
+                 q1_10_left=0.292,
+                 q1_10_right=0.423,
+                 q1_10_top=0.322,
+                 q1_10_bottom=0.588,
+                 
+                 q11_20_left=0.644,
+                 q11_20_right=0.776,
+                 q11_20_top=0.322,
+                 q11_20_bottom=0.588,
+                 
+                 q21_30_left=0.292,
+                 q21_30_right=0.423,
+                 q21_30_top=0.647,
+                 q21_30_bottom=0.917,
+                 
+                 q31_40_left=0.644,
+                 q31_40_right=0.776,
+                 q31_40_top=0.647,
+                 q31_40_bottom=0.917,
+                 
                  optionsPerRow=5,
-                 roiShrink=0.1):
-        self.left = (left_ansLeft, left_ansRight, left_ansTop, left_ansBottom)
-        self.right = (right_ansLeft, right_ansRight, right_ansTop, right_ansBottom)
-        self.questionsPerCol = questionsPerCol
+                 roiShrink=0):
+        
+        self.student_id = (student_id_left, student_id_right, student_id_top, student_id_bottom, student_id_rows, student_id_cols)
+        self.quiz_id = (quiz_id_left, quiz_id_right, quiz_id_top, quiz_id_bottom, quiz_id_rows, quiz_id_cols)
+        self.class_id = (class_id_left, class_id_right, class_id_top, class_id_bottom, class_id_rows, class_id_cols)
+        
+        self.q1_10 = (q1_10_left, q1_10_right, q1_10_top, q1_10_bottom)
+        self.q11_20 = (q11_20_left, q11_20_right, q11_20_top, q11_20_bottom)
+        self.q21_30 = (q21_30_left, q21_30_right, q21_30_top, q21_30_bottom)
+        self.q31_40 = (q31_40_left, q31_40_right, q31_40_top, q31_40_bottom)
+        
         self.optionsPerRow = optionsPerRow
         self.roiShrink = roiShrink
 
-    def buildRois(self, W, H):
+    def buildAllRois(self, W, H):
+        all_rois = {
+            'student_id': self.buildIdRois(self.student_id, W, H, 'student_id'),
+            'quiz_id': self.buildIdRois(self.quiz_id, W, H, 'quiz_id'),
+            'class_id': self.buildIdRois(self.class_id, W, H, 'class_id'),
+            'questions_1_10': self.buildQuestionRois(self.q1_10, W, H, startQ=1, numQuestions=10),
+            'questions_11_20': self.buildQuestionRois(self.q11_20, W, H, startQ=11, numQuestions=10),
+            'questions_21_30': self.buildQuestionRois(self.q21_30, W, H, startQ=21, numQuestions=10),
+            'questions_31_40': self.buildQuestionRois(self.q31_40, W, H, startQ=31, numQuestions=10)
+        }
+        return all_rois
+
+    def buildIdRois(self, region, W, H, field_name):
+        left, right, top, bottom, num_rows, num_cols = region
+        
+        x0 = int(W * left)
+        x1 = int(W * right)
+        y0 = int(H * top)
+        y1 = int(H * bottom)
+        
+        rowHeight = (y1 - y0) / num_rows
+        colWidth = (x1 - x0) / num_cols
+        
         rois = []
-        rois += self._buildHalf(self.left, W, H, startQ=1)
-        rois += self._buildHalf(self.right, W, H, startQ=self.questionsPerCol + 1)
+        for r in range(num_rows):
+            digit = r
+            yTop = int(y0 + r * rowHeight)
+            yBottom = int(y0 + (r + 1) * rowHeight)
+            dy = int((yBottom - yTop) * self.roiShrink)
+            
+            for c in range(num_cols):
+                column = c
+                xLeft = int(x0 + c * colWidth)
+                xRight = int(x0 + (c + 1) * colWidth)
+                dx = int((xRight - xLeft) * self.roiShrink)
+                
+                roi = (yTop + dy, yBottom - dy, xLeft + dx, xRight - dx, field_name, digit, column)
+                rois.append(roi)
+        
         return rois
 
-    def _buildHalf(self, region, W, H, startQ):
-        ansLeft, ansRight, ansTop, ansBottom = region
-        x0 = int(W * ansLeft)
-        x1 = int(W * ansRight)
-        y0 = int(H * ansTop)
-        y1 = int(H * ansBottom)
-
-        rowHeight = (y1 - y0) / self.questionsPerCol
-        colWidth = (x1 - x0)
-        optionWidth = colWidth / self.optionsPerRow
-
+    def buildQuestionRois(self, region, W, H, startQ, numQuestions):
+        """Build ROIs for question regions"""
+        left, right, top, bottom = region
+        
+        x0 = int(W * left)
+        x1 = int(W * right)
+        y0 = int(H * top)
+        y1 = int(H * bottom)
+        
+        rowHeight = (y1 - y0) / numQuestions
+        colWidth = (x1 - x0) / self.optionsPerRow
+        
         rois = []
-        for r in range(self.questionsPerCol):
+        for r in range(numQuestions):
             quesIdx = r + startQ
             yTop = int(y0 + r * rowHeight)
             yBottom = int(y0 + (r + 1) * rowHeight)
             dy = int((yBottom - yTop) * self.roiShrink)
-
+            
             for o in range(self.optionsPerRow):
-                xLeft = int(x0 + o * optionWidth)
-                xRight = int(x0 + (o + 1) * optionWidth)
+                xLeft = int(x0 + o * colWidth)
+                xRight = int(x0 + (o + 1) * colWidth)
                 dx = int((xRight - xLeft) * self.roiShrink)
+                
                 roi = (yTop + dy, yBottom - dy, xLeft + dx, xRight - dx, quesIdx, o)
                 rois.append(roi)
+        
+        return rois
+
+    def buildRois(self, W, H):
+        rois = []
+        rois += self.buildQuestionRois(self.q1_10, W, H, startQ=1, numQuestions=10)
+        rois += self.buildQuestionRois(self.q11_20, W, H, startQ=11, numQuestions=10)
+        rois += self.buildQuestionRois(self.q21_30, W, H, startQ=21, numQuestions=10)
+        rois += self.buildQuestionRois(self.q31_40, W, H, startQ=31, numQuestions=10)
         return rois
