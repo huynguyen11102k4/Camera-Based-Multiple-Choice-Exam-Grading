@@ -1,272 +1,383 @@
-# markers.py
+# path: markers.py
 from __future__ import annotations
 
+import logging
 import os
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Dict, List, Tuple, Optional
 
 import cv2 as cv
 import numpy as np
 
-from core import ARUCO_DICT, A4_PX, TEMPLATE_LAYOUT_FILE, log, safe_mkdir, APRILTAG_FAMILY, TAG_SYSTEM
+
+APRILTAG_DICT: int = cv.aruco.DICT_APRILTAG_16h5
+
+A4_PX: Tuple[int, int] = (2481, 3509)
+
+TEMPLATE_LAYOUT_FILE: str = "template_marker_layout.json"
 
 
-def build_detector():
-    """Khởi tạo detector thống nhất ArUco hoặc AprilTag.
+log = logging.getLogger(__name__)
+if not log.handlers:
+    logging.basicConfig(level=logging.INFO)
 
-    Tôi tách hàm này để backend có thể thay đổi (aruco / apriltag)
-    mà không ảnh hưởng các hàm phía sau.
-    """
-    if TAG_SYSTEM == "aruco":
-        # --- Original ArUco ---
-        params = cv.aruco.DetectorParameters()
-        params.cornerRefinementMethod = cv.aruco.CORNER_REFINE_SUBPIX
-        dictionary = cv.aruco.getPredefinedDictionary(ARUCO_DICT)
-        return ("aruco", cv.aruco.ArucoDetector(dictionary, params))
 
+def safe_mkdir(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+
+
+def _safe_imwrite(path: str, img: np.ndarray, note: str = "") -> None:
+    ok = cv.imwrite(path, img)
+    if ok:
+        if note:
+            log.info(f"[DebugImg] Saved {note} -> {path}")
+        else:
+            log.info(f"[DebugImg] Saved -> {path}")
     else:
-        # --- AprilTag Detector ---
-        options = cv.aruco.AprilTagDetector_Params()
-        # Bạn có thể chỉnh refine giống ArUco:
-        options.cornerRefinementMethod = cv.aruco.CORNER_REFINE_SUBPIX
-
-        detector = cv.aruco.AprilTagDetector()
-        detector.addFamily(APRILTAG_FAMILY, options)
-
-        return ("apriltag", detector)
+        log.warning(f"[DebugImg] Failed to save image -> {path}")
 
 
-# ========== ArUco Helpers ==========
-def build_aruco_detector() -> cv.aruco.ArucoDetector:
-    """Khởi tạo detector với tinh chỉnh subpixel để ổn định góc.
+@dataclass
+class TagDetection:
+    id: int                # ID của marker
+    corners: np.ndarray    # 4 đỉnh (4, 2)
+    center: np.ndarray     # tâm (2,)
 
-    Tôi dùng SUBPIX vì nó giảm jitter vị trí góc marker, từ đó homography ổn định hơn.
-    """
+
+@lru_cache(maxsize=1)
+def _build_detector() -> cv.aruco.ArucoDetector:
     params = cv.aruco.DetectorParameters()
     params.cornerRefinementMethod = cv.aruco.CORNER_REFINE_SUBPIX
-    dictionary = cv.aruco.getPredefinedDictionary(ARUCO_DICT)
-    return cv.aruco.ArucoDetector(dictionary, params)
+
+    dictionary = cv.aruco.getPredefinedDictionary(APRILTAG_DICT)
+    detector = cv.aruco.ArucoDetector(dictionary, params)
+    log.info(f"[Detector] Init ArucoDetector with dict={APRILTAG_DICT}")
+    return detector
 
 
-def detect_markers(gray: np.ndarray):
-    """Phát hiện marker ArUco hoặc AprilTag tùy cấu hình.
+def detect_tags(gray: np.ndarray) -> List[TagDetection]:
+    detector = _build_detector()
+    corners, ids, _ = detector.detectMarkers(gray)
 
-    Tôi unified output về cùng chuẩn:
-    - corners: List[np.ndarray] mỗi cái (1, 4, 2)
-    - ids: np.ndarray shape (N, 1)
-    """
-    mode, detector = build_detector()
+    if ids is None or len(ids) == 0:
+        return []
 
-    if mode == "aruco":
-        corners, ids, _rej = detector.detectMarkers(gray)
-        if ids is None:
-            return [], None
-        return list(corners), ids
+    ids_arr = np.asarray(ids, dtype=np.int32).reshape(-1)
 
-    else:
-        # AprilTag detection
-        results = detector.detect(gray)
-        # results: list of cv2.aruco.AprilTagDetection
-        if len(results) == 0:
-            return [], None
+    detections: List[TagDetection] = []
+    for i, c in enumerate(corners):
+        c_arr = np.asarray(c, dtype=np.float32).reshape(-1, 2)  # (4,2)
+        center = c_arr.mean(axis=0)
+        detections.append(
+            TagDetection(
+                id=int(ids_arr[i]),
+                corners=c_arr,
+                center=center,
+            )
+        )
 
-        corners = []
-        ids = []
-        for r in results:
-            # r.corners shape (4,2) → convert thành (1,4,2) giống ArUco
-            c = np.array(r.corners, dtype=np.float32).reshape(1, 4, 2)
-            corners.append(c)
-            ids.append([r.id])
-
-        ids = np.array(ids, dtype=np.int32)
-        return corners, ids
+    detections.sort(key=lambda d: d.id)
+    return detections
 
 
-# ========== Template Layout I/O ==========
+def _draw_detections(
+    img_bgr: np.ndarray,
+    detections: List[TagDetection],
+    draw_ids: bool = True,
+) -> np.ndarray:
+
+    vis = img_bgr.copy()
+    for d in detections:
+        pts = d.corners.astype(int)
+        cv.polylines(vis, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
+        c = tuple(d.center.astype(int))
+        cv.circle(vis, c, 5, (0, 0, 255), -1)
+        if draw_ids:
+            cv.putText(
+                vis,
+                str(d.id),
+                (c[0] + 5, c[1] - 5),
+                cv.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 0, 0),
+                2,
+                cv.LINE_AA,
+            )
+    return vis
+
+
 def extract_template_marker_layout(
     img_path: str,
     save_path: str = TEMPLATE_LAYOUT_FILE,
-) -> None:
-    """Tạo layout mốc từ ảnh template, lưu {marker_id: [cx, cy]}.
+    debug_dir: Optional[str] = None,
+) -> Dict[int, List[float]]:
 
-    Tôi lưu tâm marker (thay vì 4 góc) vì fit homography với tâm đơn giản hơn.
-    """
     import json
 
     img = cv.imread(img_path)
     if img is None:
         raise FileNotFoundError(f"Template image not found: {img_path}")
-    log.debug(f"[Template] Input: {img_path}, shape={img.shape}")
+    log.info(f"[Template] Input: {img_path}, shape={img.shape}")
 
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    corners, ids = detect_markers(gray)
-    log.debug(f"[Template] Detected ids: {None if ids is None else ids.flatten().tolist()}")
+    detections = detect_tags(gray)
+    log.info(f"[Template] Detected ids: {[d.id for d in detections]}")
 
-    if ids is None or len(ids) < 4:
-        raise RuntimeError("Template must contain ≥4 ArUco markers.")
+    # STEP 1: lưu ảnh template có tag & id, để xem layout marker có đúng ý không
+    if debug_dir is not None:
+        safe_mkdir(debug_dir)
+        vis = _draw_detections(img, detections)
+        _safe_imwrite(
+            os.path.join(debug_dir, "markers_step1_template_tags.png"),
+            vis,
+            "step1 template tags",
+        )
+
+    if len(detections) < 4:
+        raise RuntimeError("Template must contain ≥4 markers.")
 
     layout: Dict[int, List[float]] = {}
-    for i, mid in enumerate(ids.flatten()):
-        center = np.mean(corners[i][0], axis=0).tolist()  # trung bình 4 đỉnh
-        mid_int = int(mid)
-        log.debug(f"[Template] id={mid_int} center={center}")
-        layout[mid_int] = center
+    seen: set[int] = set()
+
+    for d in detections:
+        if d.id in seen:
+            raise RuntimeError(f"Duplicate marker id {d.id} in template.")
+        seen.add(d.id)
+        layout[d.id] = d.center.astype(float).tolist()
+        log.debug(f"[Template] id={d.id} center={layout[d.id]}")
 
     with open(save_path, "w", encoding="utf-8") as f:
         json.dump(layout, f, indent=2, ensure_ascii=False)
+
     log.info(f"[Template] Saved {len(layout)} markers -> {save_path}")
+    return layout
 
 
 def load_template_marker_layout(path: str = TEMPLATE_LAYOUT_FILE) -> Dict[int, List[float]]:
-    """Đọc layout mốc {id: [cx, cy]} đã lưu từ template.
 
-    Tôi ép kiểu về int/float để tránh lỗi parse lặt vặt từ JSON.
-    """
     import json
 
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     layout = {int(k): [float(x) for x in v] for k, v in data.items()}
-    log.debug(f"[Template] loaded layout ids={sorted(layout.keys())}")
+    log.info(f"[Template] loaded ids={sorted(layout.keys())}")
     return layout
 
 
-# ========== Warp & Crop ==========
+def _collect_correspondences(
+    detections: List[TagDetection],
+    template_layout: Dict[int, List[float]],
+) -> Tuple[np.ndarray, np.ndarray]:
+
+    src: List[np.ndarray] = []
+    dst: List[np.ndarray] = []
+
+    for d in detections:
+        if d.id in template_layout:
+            src.append(d.center.astype(np.float32))
+            dst.append(np.asarray(template_layout[d.id], dtype=np.float32))
+
+    if not src:
+        raise RuntimeError("No common marker ids between image and layout.")
+
+    src_pts = np.stack(src, axis=0)
+    dst_pts = np.stack(dst, axis=0)
+    return src_pts, dst_pts
+
+
+def warp_to_a4_single_h(
+    img: np.ndarray,
+    template_layout: Dict[int, List[float]],
+    out_size: Tuple[int, int] = A4_PX,
+    debug_dir: Optional[str] = None,
+) -> np.ndarray:
+
+    W_out, H_out = out_size
+    if W_out <= 0 or H_out <= 0:
+        raise ValueError(f"Invalid out_size={out_size}")
+
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    detections = detect_tags(gray)
+    log.info(f"[WarpH] detected_ids={[d.id for d in detections]}")
+
+    if debug_dir is not None:
+        safe_mkdir(debug_dir)
+        vis_input = _draw_detections(img, detections)
+        _safe_imwrite(
+            os.path.join(debug_dir, "markers_step2_input_tags.png"),
+            vis_input,
+            "step2 input with tags",
+        )
+
+    if len(detections) < 4:
+        raise RuntimeError("Need ≥4 markers for homography.")
+
+    src_pts, dst_pts = _collect_correspondences(detections, template_layout)
+    if len(src_pts) < 4:
+        raise RuntimeError(f"Matched markers < 4 (got {len(src_pts)}).")
+
+    H_sd, mask = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 3.0)
+    if H_sd is None or mask is None or int(mask.sum()) < 4:
+        raise RuntimeError("Global homography estimation failed.")
+
+    log.info(f"[WarpH] inliers={int(mask.sum())}/{len(mask)}")
+
+    warped = cv.warpPerspective(img, H_sd, out_size)
+    log.info(f"[WarpH] warped_shape={warped.shape}")
+
+    if debug_dir is not None:
+        _safe_imwrite(
+            os.path.join(debug_dir, "markers_step3_warped_H_only.png"),
+            warped,
+            "step3 warped by H only",
+        )
+
+    return warped
+
+
+def refine_warp_idw(
+    warped: np.ndarray,
+    template_layout: Dict[int, List[float]],
+    grid_shape: Tuple[int, int] = (24, 32), # Kích thước lưới nội suy: (row, col) = (10,16), (16,24), (24,32). Số càng lớn thì lưới càng mịn (chi tiết hơn) nhưng tính toán chậm hơn.
+    idw_power: float = 2, # Số mũ trong công thức Inverse Distance Weighting (IDW).
+        # - power lớn (vd 3, 4): điểm gần ảnh hưởng MẠNH hơn, bề mặt gồ ghề hơn.
+        # - power nhỏ (vd 1): điểm xa vẫn còn ảnh hưởng đáng kể, bề mặt mượt hơn.
+    idw_eps: float = 1e-3, # Epsilon rất nhỏ để tránh chia cho 0 khi khoảng cách gần như bằng 0.
+        # - Nếu có điểm trùng vị trí (d = 0) → chia cho 0 → lỗi.
+        # - Thêm eps (1e-3) đảm bảo d không bao giờ là 0 tuyệt đối.
+
+    debug_dir: Optional[str] = None,
+) -> np.ndarray:
+
+    H_img, W_img = warped.shape[:2]
+    gray = cv.cvtColor(warped, cv.COLOR_BGR2GRAY)
+    detections = detect_tags(gray)
+    log.info(f"[RefineIDW] detected_ids={[d.id for d in detections]}")
+
+    if len(detections) < 4:
+        log.warning("[RefineIDW] Not enough markers, skip refine.")
+        return warped
+
+    src_pts_list: List[np.ndarray] = []
+    dst_pts_list: List[np.ndarray] = []
+
+    for d in detections:
+        if d.id in template_layout:
+            src_pts_list.append(d.center.astype(np.float32))
+            dst_pts_list.append(np.asarray(template_layout[d.id], np.float32))
+
+    if len(src_pts_list) < 4:
+        log.warning("[RefineIDW] matched markers < 4, skip refine.")
+        return warped
+
+    src_pts = np.stack(src_pts_list, axis=0)  # (N,2)
+    dst_pts = np.stack(dst_pts_list, axis=0)  # (N,2)
+
+    residuals = src_pts - dst_pts             # vector cần bù (N,2)
+    avg_res = float(np.linalg.norm(residuals, axis=1).mean())
+    log.info(f"[RefineIDW] N={len(residuals)}, avg_residual={avg_res:.2f}px")
+
+    gx, gy = grid_shape
+    map_dx_coarse = np.zeros((gy + 1, gx + 1), dtype=np.float32)
+    map_dy_coarse = np.zeros((gy + 1, gx + 1), dtype=np.float32)
+
+    dst_pts_f = dst_pts.astype(np.float32)
+
+    for iy in range(gy + 1):
+        y = (iy / gy) * (H_img - 1) if gy > 0 else (H_img - 1) / 2.0
+        for ix in range(gx + 1):
+            x = (ix / gx) * (W_img - 1) if gx > 0 else (W_img - 1) / 2.0
+
+            diff = dst_pts_f - np.array([x, y], dtype=np.float32)
+            dists = np.linalg.norm(diff, axis=1) + idw_eps
+            weights = 1.0 / (dists ** idw_power)
+
+            w_sum = float(weights.sum())
+            if w_sum < 1e-6:
+                dx = dy = 0.0
+            else:
+                w_norm = weights[:, None] / w_sum
+                delta = (w_norm * residuals).sum(axis=0)
+                dx = float(delta[0])
+                dy = float(delta[1])
+
+            map_dx_coarse[iy, ix] = dx
+            map_dy_coarse[iy, ix] = dy
+
+    map_dx = cv.resize(map_dx_coarse, (W_img, H_img), interpolation=cv.INTER_LINEAR)
+    map_dy = cv.resize(map_dy_coarse, (W_img, H_img), interpolation=cv.INTER_LINEAR)
+
+    xs, ys = np.meshgrid(
+        np.arange(W_img, dtype=np.float32),
+        np.arange(H_img, dtype=np.float32),
+    )
+    map_x = xs + map_dx
+    map_y = ys + map_dy
+
+    map_x = np.clip(map_x, 0, W_img - 1).astype(np.float32)
+    map_y = np.clip(map_y, 0, H_img - 1).astype(np.float32)
+
+    refined = cv.remap(
+        warped,
+        map_x,
+        map_y,
+        interpolation=cv.INTER_LINEAR,
+        borderMode=cv.BORDER_REPLICATE,
+    )
+    log.info(f"[RefineIDW] refined_shape={refined.shape}")
+
+    if debug_dir is not None:
+        safe_mkdir(debug_dir)
+        _safe_imwrite(
+            os.path.join(debug_dir, "markers_step4_warped_refined.png"),
+            refined,
+            "step4 warped refined by IDW",
+        )
+
+    return refined
+
+
 def warp_to_a4(
     img: np.ndarray,
     template_layout: Dict[int, List[float]],
     out_size: Tuple[int, int] = A4_PX,
+    use_refine: bool = True,
+    debug_dir: Optional[str] = None,
 ) -> np.ndarray:
-    """Ước lượng homography từ vị trí marker hiện tại sang layout chuẩn A4.
-
-    Tôi dùng homography dựa trên tâm marker vì cách này ít phụ thuộc orientation của marker.
-    """
-    log.debug(f"[Warp] input_shape={img.shape}, out_size={out_size}")
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    corners, ids = detect_markers(gray)
-    log.debug(
-        f"[Warp] detected_ids={None if ids is None else ids.flatten().tolist()}"
-    )
-
-    if ids is None or len(ids) < 4:
-        raise RuntimeError("Not enough markers to warp to A4.")
-
-    src_pts: List[np.ndarray] = []
-    dst_pts: List[np.ndarray] = []
-    matched_ids: List[int] = []
-
-    for i, mid in enumerate(ids.flatten()):
-        mid_int = int(mid)
-        if mid_int in template_layout:
-            c = np.mean(corners[i][0], axis=0)  # tâm hiện tại
-            src_pts.append(c.astype(np.float32))
-            dst_pts.append(
-                np.array(template_layout[mid_int], dtype=np.float32)
-            )  # tâm chuẩn
-            matched_ids.append(mid_int)
-
-    log.debug(f"[Warp] matched_ids={matched_ids}")
-    if len(src_pts) < 4:
-        raise RuntimeError("Matched markers < 4; cannot compute homography.")
-
-    src = np.stack(src_pts, axis=0)
-    dst = np.stack(dst_pts, axis=0)
-    log.debug(f"[Warp] src_pts={src.tolist()}")
-    log.debug(f"[Warp] dst_pts={dst.tolist()}")
-
-    H, mask = cv.findHomography(src, dst, cv.RANSAC, ransacReprojThreshold=3.0)
-    log.debug(
-        f"[Warp] H={None if H is None else H.tolist()}, "
-        f"mask={None if mask is None else mask.ravel().tolist()}"
-    )
-    if H is None:
-        raise RuntimeError("Homography estimation failed.")
-
-    warped = cv.warpPerspective(img, H, out_size)
-    log.debug(f"[Warp] warped_shape={warped.shape}")
+    warped = warp_to_a4_single_h(img, template_layout, out_size, debug_dir=debug_dir)
+    if use_refine:
+        warped = refine_warp_idw(warped, template_layout, debug_dir=debug_dir)
     return warped
 
 
-def auto_crop_using_markers(
-    warped: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, Tuple[int, int, int, int]]:
-    """Cắt gọn vùng bài làm dựa trên tứ giác bao quanh các marker biên.
-
-    Tôi dùng bounding box + padding vì đơn giản mà vẫn tin cậy khi marker đặt quanh biên.
-    """
-    log.debug(f"[Crop] warped_shape={warped.shape}")
-    gray = cv.cvtColor(warped, cv.COLOR_BGR2GRAY)
-    corners, ids = detect_markers(gray)
-    log.debug(
-        f"[Crop] detected_ids={None if ids is None else ids.flatten().tolist()}"
-    )
-
-    if ids is None or len(ids) < 4:
-        log.warning("[Crop] Not enough markers; returning full image.")
-        H, W = warped.shape[:2]
-        return warped, warped.copy(), (0, 0, W, H)
-
-    centers = np.array([np.mean(c[0], axis=0) for c in corners])
-    log.debug(f"[Crop] centers={centers.tolist()}")
-
-    # Phân loại góc dựa theo tổng toạ độ và hiệu để lấy tl,tr,bl,br
-    s = centers.sum(axis=1)
-    diff = np.diff(centers, axis=1).ravel()
-    tl, br = centers[np.argmin(s)], centers[np.argmax(s)]
-    tr, bl = centers[np.argmin(diff)], centers[np.argmax(diff)]
-    log.debug(
-        f"[Crop] tl={tl.tolist()}, tr={tr.tolist()}, "
-        f"bl={bl.tolist()}, br={br.tolist()}"
-    )
-
-    x_min, x_max = int(min(tl[0], bl[0])), int(max(tr[0], br[0]))
-    y_min, y_max = int(min(tl[1], tr[1])), int(max(bl[1], br[1]))
-    pad_x = int(0.03 * (x_max - x_min))
-    pad_y = int(0.03 * (y_max - y_min))
-
-    H, W = warped.shape[:2]
-    x_min = max(0, x_min - pad_x)
-    y_min = max(0, y_min - pad_y)
-    x_max = min(W, x_max + pad_x)
-    y_max = min(H, y_max + pad_y)
-    log.debug(
-        f"[Crop] bbox=(x_min={x_min}, y_min={y_min}, "
-        f"x_max={x_max}, y_max={y_max}), pad=({pad_x},{pad_y})"
-    )
-
-    overlay = warped.copy()
-    cv.rectangle(overlay, (x_min, y_min), (x_max, y_max), (0, 0, 255), 5)
-    cropped = warped[y_min:y_max, x_min:x_max]
-    log.debug(f"[Crop] cropped_shape={cropped.shape}")
-    return cropped, overlay, (x_min, y_min, x_max, y_max)
-
-
 if __name__ == "__main__":
-    # Demo markers: đọc ảnh, warp về A4, crop, lưu kết quả.
-    # Tôi dùng hard path để bạn chỉ cần chỉnh trong code một lần.
-    input_path = "samples/input.jpg"
-    layout_path = "samples/template_marker_layout.json"
+    template_img_path = "samples/template_scan1.png"
+    input_img_path = "samples/photo3.jpg"
     out_dir = "debug_markers"
 
     safe_mkdir(out_dir)
 
-    img = cv.imread(input_path)
-    if img is None:
-        raise FileNotFoundError(f"Input image not found: {input_path}")
-
-    # Nếu chưa có layout, báo lỗi rõ ràng để bạn tự tạo, vì tôi không thể đoán template.
-    if not os.path.exists(layout_path):
-        raise FileNotFoundError(
-            f"Template layout JSON not found: {layout_path}. "
-            f"Bạn hãy tạo nó trước bằng extract_template_marker_layout() hoặc pipeline."
+    if not os.path.exists(TEMPLATE_LAYOUT_FILE):
+        log.info("[Demo] Layout JSON not found; extracting from template.")
+        extract_template_marker_layout(
+            template_img_path,
+            TEMPLATE_LAYOUT_FILE,
+            debug_dir=out_dir,
         )
 
-    template_layout = load_template_marker_layout(layout_path)
+    layout = load_template_marker_layout(TEMPLATE_LAYOUT_FILE)
 
-    warped = warp_to_a4(img, template_layout, A4_PX)
-    cv.imwrite(f"{out_dir}/warped_A4.png", warped)
-    log.info(f"[markers main] Saved {out_dir}/warped_A4.png")
+    img = cv.imread(input_img_path)
+    if img is None:
+        raise FileNotFoundError(f"Input image not found: {input_img_path}")
 
-    cropped, overlay, bbox = auto_crop_using_markers(warped)
-    cv.imwrite(f"{out_dir}/crop_box.png", overlay)
-    cv.imwrite(f"{out_dir}/cropped.png", cropped)
-    log.info(f"[markers main] Saved cropped & overlay to {out_dir}, bbox={bbox}")
+    warped = warp_to_a4(img, layout, out_size=A4_PX, use_refine=True, debug_dir=out_dir)
+
+    warped_path = os.path.join(out_dir, "warped_a4.png")
+    _safe_imwrite(warped_path, warped, "final warped A4 (for OMR)")
+
+    step5_path = os.path.join(out_dir, "markers_step5_warped_a4.png")
+    _safe_imwrite(step5_path, warped, "step5 final warped A4")
+
+    log.info(f"[Demo] Done. Check debug images in {out_dir}")

@@ -434,7 +434,7 @@ class CircleGridEditorApp:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Circle ROI Grid Editor (drag & drop, no zoom)")
-    parser.add_argument("image", nargs="?", default=os.path.join("debug_steps", "04_cropped.png"))
+    parser.add_argument("image", nargs="?", default=os.path.join("samples", "template_scan1.png"))
     args = parser.parse_args()
     CircleGridEditorApp.run(args.image)
 
