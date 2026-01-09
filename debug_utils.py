@@ -5,43 +5,29 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 def save_step(img, step_name, folder="debug_steps"):
-    os.makedirs(folder, exist_ok=True)
-    filename = f"{step_name}_{uuid.uuid4().hex[:8]}.jpg"
-    path = os.path.join(folder, filename)
-    cv.imwrite(path, img)
-    print("[Saved]", path)
+    pass
 
 def findCircleCenterByContour(thresh, yTop, yBottom, xLeft, xRight):
-    """Tìm tâm vòng tròn bằng contour + circularity, vì ROI có thể lệch so với vùng tô."""
     roi = thresh[yTop:yBottom, xLeft:xRight]
-
     cnts, _ = cv.findContours(roi, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-
     best_cnt = None
     best_score = 0
-
     for c in cnts:
         area = cv.contourArea(c)
         if area < 20:
             continue
-
         peri = cv.arcLength(c, True)
         if peri == 0:
             continue
-
         circularity = 4 * np.pi * area / (peri * peri)
-
         if circularity > best_score:
             best_score = circularity
             best_cnt = c
-
     if best_cnt is None or best_score < 0.25:
         return None, None
-
     M = cv.moments(best_cnt)
     if M["m00"] == 0:
         return None, None
-
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
 
@@ -121,7 +107,7 @@ def drawDebugRois(img, all_rois, detectedAnswers=None, answerKey=None):
 
                     cv.circle(imgDebug, (center_x, center_y), radius, color, thickness)
 
-    for field_name in ['student_id', 'quiz_id', 'class_id']:
+    for field_name in ['student_id', 'quiz_id']:
         if field_name in all_rois:
             rois = all_rois[field_name]
             for roi in rois:
@@ -132,12 +118,6 @@ def drawDebugRois(img, all_rois, detectedAnswers=None, answerKey=None):
                     radius = int(min(yBottom - yTop, xRight - xLeft) * 0.4)
 
                     cv.circle(imgDebug, (center_x, center_y), radius, (200, 200, 200), 2)
-
-    plt.figure(figsize=(14, 10))
-    plt.title("Debug ROIs - All Regions")
-    plt.imshow(cv.cvtColor(imgDebug, cv.COLOR_BGR2RGB))
-    plt.axis("off")
-    plt.show()
 
     return imgDebug
     

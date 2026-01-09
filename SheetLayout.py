@@ -4,53 +4,45 @@ from matplotlib import pyplot as plt
 
 class SheetLayout:
     def __init__(self,
-                 student_id_left=0.405,
-                 student_id_right=0.555,
+                 student_id_left=0.5575,
+                 student_id_right=0.6735,
                  student_id_top=0.102,
                  student_id_bottom=0.250,
                  student_id_rows=8,
-                 student_id_cols=9,
+                 student_id_cols=7,
                  
-                 quiz_id_left=0.641,
-                 quiz_id_right=0.725,
+                 quiz_id_left=0.7195,
+                 quiz_id_right=0.8035,
                  quiz_id_top=0.102,
                  quiz_id_bottom=0.250,
                  quiz_id_rows=8,
                  quiz_id_cols=5,
                  
-                 class_id_left=0.796,
-                 class_id_right=0.880,
-                 class_id_top=0.102,
-                 class_id_bottom=0.250,
-                 class_id_rows=8,
-                 class_id_cols=5,
-                 
-                 q1_10_left=0.292,
-                 q1_10_right=0.423,
+                 q1_10_left=0.293,
+                 q1_10_right=0.4225,
                  q1_10_top=0.322,
                  q1_10_bottom=0.588,
                  
-                 q11_20_left=0.644,
-                 q11_20_right=0.776,
+                 q11_20_left=0.6445,
+                 q11_20_right=0.7745,
                  q11_20_top=0.322,
                  q11_20_bottom=0.588,
                  
-                 q21_30_left=0.292,
-                 q21_30_right=0.423,
-                 q21_30_top=0.647,
-                 q21_30_bottom=0.917,
+                 q21_30_left=0.293,
+                 q21_30_right=0.4225,
+                 q21_30_top=0.6475,
+                 q21_30_bottom=0.9152,
                  
-                 q31_40_left=0.644,
-                 q31_40_right=0.776,
-                 q31_40_top=0.647,
-                 q31_40_bottom=0.917,
+                 q31_40_left=0.6445,
+                 q31_40_right=0.7745,
+                 q31_40_top=0.6475,
+                 q31_40_bottom=0.9152,
                  
                  optionsPerRow=5,
                  roiShrink=0):
         
         self.student_id = (student_id_left, student_id_right, student_id_top, student_id_bottom, student_id_rows, student_id_cols)
         self.quiz_id = (quiz_id_left, quiz_id_right, quiz_id_top, quiz_id_bottom, quiz_id_rows, quiz_id_cols)
-        self.class_id = (class_id_left, class_id_right, class_id_top, class_id_bottom, class_id_rows, class_id_cols)
         
         self.q1_10 = (q1_10_left, q1_10_right, q1_10_top, q1_10_bottom)
         self.q11_20 = (q11_20_left, q11_20_right, q11_20_top, q11_20_bottom)
@@ -64,7 +56,6 @@ class SheetLayout:
         all_rois = {
             'student_id': self.buildIdRois(self.student_id, W, H, 'student_id'),
             'quiz_id': self.buildIdRois(self.quiz_id, W, H, 'quiz_id'),
-            'class_id': self.buildIdRois(self.class_id, W, H, 'class_id'),
             'questions_1_10': self.buildQuestionRois(self.q1_10, W, H, startQ=1, numQuestions=10),
             'questions_11_20': self.buildQuestionRois(self.q11_20, W, H, startQ=11, numQuestions=10),
             'questions_21_30': self.buildQuestionRois(self.q21_30, W, H, startQ=21, numQuestions=10),
