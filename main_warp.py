@@ -1,63 +1,106 @@
 from __future__ import annotations
 
 import os
+import json
+import time
 
 import cv2 as cv
 
 from warp_engine.config import TEMPLATE_LAYOUT_FILE, A4_PX
 from warp_engine.engine import WarpEngine
 from warp_engine.template import extract_template
-from warp_engine.utils import safe_mkdir, safe_imwrite
+from warp_engine.utils import safe_mkdir
 
-INPUT_IMAGE = "samples/1photo2.jpg"              # ảnh chụp cần warp
-TEMPLATE_IMAGE = "samples/template_scan1.png"    # ảnh template để extract layout
-OUT_DIR = "debug_markers"  # thư mục output
+from orm import OMRProcessor, load_circle_rois
 
-OUTPUT_SIZE = A4_PX                              # (2481, 3509)
-USE_GLOBAL_IDW = True
-USE_REGION_REFINE = True
 
+INPUT_IMAGE = "samples/1photo1.jpg"              # ảnh chụp cần warp
+TEMPLATE_IMAGE = "samples/template_scan1.png"    # ảnh template
+OUT_DIR = "debug_markers"
+
+CIRCLE_ROIS_JSON = "circle_rois.json"
+ANSWER_KEY_JSON = "answer_key.json"
+
+OUTPUT_SIZE = A4_PX
 USE_EXISTING_TEMPLATE = False
 
 
+def log_time(name: str, start: float):
+    elapsed = (time.perf_counter() - start) * 1000
+    print(f"[TIME] {name}: {elapsed:.2f} ms")
+
+
 def main():
+    t_total = time.perf_counter()
 
     safe_mkdir(OUT_DIR)
 
+    t = time.perf_counter()
     if not USE_EXISTING_TEMPLATE:
-        print(f"[WarpEngine] Extracting template từ ảnh: {TEMPLATE_IMAGE}")
-        extract_template(TEMPLATE_IMAGE, TEMPLATE_LAYOUT_FILE, debug_dir=OUT_DIR)
+        extract_template(
+            TEMPLATE_IMAGE,
+            TEMPLATE_LAYOUT_FILE,
+        )
     else:
         if not os.path.exists(TEMPLATE_LAYOUT_FILE):
             raise FileNotFoundError(
                 f"Không tìm thấy {TEMPLATE_LAYOUT_FILE}. "
                 f"Bạn cần đặt USE_EXISTING_TEMPLATE=False để extract."
             )
+    log_time("Extract template", t)
 
-    print(f"[WarpEngine] Loading layout từ {TEMPLATE_LAYOUT_FILE}")
-    warp_engine = WarpEngine(TEMPLATE_LAYOUT_FILE)
+    t = time.perf_counter()
+    warp_engine = WarpEngine(
+        TEMPLATE_LAYOUT_FILE,
+        TEMPLATE_IMAGE,
+    )
+    log_time("Init WarpEngine", t)
 
+    t = time.perf_counter()
     img = cv.imread(INPUT_IMAGE)
     if img is None:
         raise FileNotFoundError(f"Không đọc được ảnh input: {INPUT_IMAGE}")
+    log_time("Read input image", t)
 
-    print(f"[WarpEngine] Input loaded: shape={img.shape}")
-
-    warped = warp_engine.warp(
+    t = time.perf_counter()
+    warped_a4 = warp_engine.warp(
         img,
-        out_size=OUTPUT_SIZE,
-        debug_dir=OUT_DIR,
-        use_global_idw=USE_GLOBAL_IDW,
-        use_region_refine=USE_REGION_REFINE,
+        use_global_idw=True,
+        use_region_refine=True,
     )
+    log_time("Warp to A4", t)
 
-    out_path = os.path.join(OUT_DIR, "warped_a4.png")
-    safe_imwrite(out_path, warped, "Warped A4")
+    t = time.perf_counter()
+    circle_rois = load_circle_rois(CIRCLE_ROIS_JSON)
+    log_time("Load circle ROIs", t)
 
-    print("\n================= DONE =================")
-    print(f"Warped output  →  {out_path}")
-    print(f"Debug images   →  {OUT_DIR}")
-    print("========================================\n")
+    t = time.perf_counter()
+    if os.path.exists(ANSWER_KEY_JSON):
+        with open(ANSWER_KEY_JSON, "r", encoding="utf-8") as f:
+            answer_key = [int(x) for x in json.load(f)]
+    else:
+        max_q = max(r.question for r in circle_rois)
+        answer_key = [0] * max_q
+    log_time("Load answer key", t)
+
+    t = time.perf_counter()
+    omr = OMRProcessor(
+        circle_rois=circle_rois,
+        answer_key=answer_key,
+    )
+    log_time("Init OMRProcessor", t)
+
+    t = time.perf_counter()
+    omr_result = omr.run(warped_a4)
+    log_time("Run OMR", t)
+
+    t = time.perf_counter()
+    scored_img = omr_result["scored_img"]
+    out_path = os.path.join(OUT_DIR, "warped_a4_scored.png")
+    cv.imwrite(out_path, scored_img)
+    log_time("Save output image", t)
+
+    log_time("TOTAL PIPELINE", t_total)
 
 
 if __name__ == "__main__":

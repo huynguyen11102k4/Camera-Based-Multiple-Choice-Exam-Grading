@@ -13,14 +13,8 @@ def safe_mkdir(path: str):
 
 
 def safe_imwrite(path: str, img: np.ndarray, note: str = ""):
-    ok = cv.imwrite(path, img)
-    if ok:
-        if note:
-            log.info(f"[WarpEngine] Saved {note} -> {path}")
-        else:
-            log.info(f"[WarpEngine] Saved -> {path}")
-    else:
-        log.warning(f"[WarpEngine] Failed to save image -> {path}")
+    # Debug image writing disabled to improve performance
+    return
 
 
 def draw_detections(img_bgr, detections, draw_ids=True, color=(0, 255, 0)):

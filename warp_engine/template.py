@@ -2,7 +2,7 @@ import json
 import os
 import cv2 as cv
 from .detector import detect_tags
-from .utils import safe_imwrite, draw_detections, safe_mkdir
+from .utils import  draw_detections, safe_mkdir
 from .config import TEMPLATE_LAYOUT_FILE
 import logging
 
@@ -17,8 +17,6 @@ def extract_template(path_img, path_out=TEMPLATE_LAYOUT_FILE, debug_dir=None):
 
     if debug_dir:
         safe_mkdir(debug_dir)
-        vis = draw_detections(img, detections)
-        safe_imwrite(os.path.join(debug_dir, "layout_debug.png"), vis)
 
     layout = {}
     for d in detections:

@@ -28,14 +28,8 @@ def safe_mkdir(path: str) -> None:
 
 
 def _safe_imwrite(path: str, img: np.ndarray, note: str = "") -> None:
-    ok = cv.imwrite(path, img)
-    if ok:
-        if note:
-            log.info(f"[DebugImg] Saved {note} -> {path}")
-        else:
-            log.info(f"[DebugImg] Saved -> {path}")
-    else:
-        log.warning(f"[DebugImg] Failed to save image -> {path}")
+    # Debug image writing disabled to improve performance
+    return
 
 
 @dataclass
@@ -353,7 +347,7 @@ def warp_to_a4(
 
 if __name__ == "__main__":
     template_img_path = "samples/template_scan1.png"
-    input_img_path = "samples/photo3.jpg"
+    input_img_path = "samples/1photo2.jpg"
     out_dir = "debug_markers"
 
     safe_mkdir(out_dir)
