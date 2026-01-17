@@ -14,7 +14,7 @@ from warp_engine.utils import safe_mkdir
 from orm import OMRProcessor, load_circle_rois
 
 
-INPUT_IMAGE = "samples/1photo1.jpg"              # ảnh chụp cần warp
+INPUT_IMAGE = "samples/1photo2.jpg"              # ảnh chụp cần warp
 TEMPLATE_IMAGE = "samples/template_scan1.png"    # ảnh template
 OUT_DIR = "debug_markers"
 
@@ -40,6 +40,7 @@ def main():
         extract_template(
             TEMPLATE_IMAGE,
             TEMPLATE_LAYOUT_FILE,
+            OUT_DIR
         )
     else:
         if not os.path.exists(TEMPLATE_LAYOUT_FILE):
@@ -65,6 +66,7 @@ def main():
     t = time.perf_counter()
     warped_a4 = warp_engine.warp(
         img,
+        debug_dir=OUT_DIR,
         use_global_idw=True,
         use_region_refine=True,
     )
@@ -91,7 +93,7 @@ def main():
     log_time("Init OMRProcessor", t)
 
     t = time.perf_counter()
-    omr_result = omr.run(warped_a4)
+    omr_result = omr.run(warped_a4, debug_dir=OUT_DIR)
     log_time("Run OMR", t)
 
     t = time.perf_counter()

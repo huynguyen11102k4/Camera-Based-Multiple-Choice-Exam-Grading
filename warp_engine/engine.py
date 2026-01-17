@@ -26,7 +26,7 @@ class WarpEngine:
             use_global_idw=True,
             use_region_refine=True,
     ):
-        H, _ = compute_global_h(img, self.layout)
+        H, _ = compute_global_h(img, self.layout, None)
 
         warped_src = cv.warpPerspective(img, H, out_size)
 

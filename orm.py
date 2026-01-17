@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 import cv2 as cv
 import numpy as np
-
+from matplotlib import pyplot as plt
 
 DEFAULT_ABS_TH = 0.12
 DEFAULT_REL_TH = 0.04
@@ -286,8 +286,11 @@ class OMRProcessor:
         )
         return vis
 
-    def run(self, a4_img: np.ndarray) -> Dict:
+    def run(self, a4_img: np.ndarray, debug_dir=None) -> Dict:
         gray = self._prep_gray(a4_img)
+
+        if debug_dir:
+            cv.imwrite(f"{debug_dir}/omr_1_preprocessed_gray.png", gray)
 
         score_cache: Dict[Tuple[int, int], float] = {}
         for roi in self.circle_rois:
@@ -302,6 +305,23 @@ class OMRProcessor:
 
         vis = self._draw_overlay(a4_img, score_cache, answers)
         vis = self._draw_score(vis, score, len(self.answer_key))
+
+        if debug_dir:
+            score_img = a4_img.copy()
+
+            for (q, opt), score in score_cache.items():
+                roi = [r for r in self.circle_rois if r.question == q and r.option == opt][0]
+
+                # Color by score: white (0) → red (high)
+                intensity = int(score * 255)
+                color = (0, 0, intensity)
+
+                cv.circle(score_img, (roi.cx, roi.cy), roi.r, color, -1)
+                cv.putText(score_img, f"{score:.2f}",
+                           (roi.cx - 15, roi.cy + 5),
+                           cv.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+
+            cv.imwrite(f"{debug_dir}/omr_2_score_heatmap.png", score_img)
 
         return {
             "answers": answers,

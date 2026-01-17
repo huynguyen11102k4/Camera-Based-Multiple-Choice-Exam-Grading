@@ -5,7 +5,6 @@ import os
 from .config import WINDOWS_4PTS
 from .detector import detect_tags
 from .refine_idw_patch import refine_idw_patch
-from .utils import safe_imwrite
 from .binarize import binarize_patch_dual
 
 
@@ -74,16 +73,26 @@ def refine_regions(template_img, layout, warped_src, windows=WINDOWS_4PTS, debug
 
         base_patch[:] = 255
 
-        mask_ink = binarize_patch_dual(patch_refined)
+        mask_ink = binarize_patch_dual(patch_refined, debug_dir=debug_dir, region_id=wi)
 
-        base_patch[mask_ink] = 0
+        base_patch[mask_ink] = (0, 0, 0)
 
         base[y0:y1, x0:x1] = base_patch
 
         if debug_dir:
-            safe_imwrite(
-                os.path.join(debug_dir, f"step_region_{wi:02d}.png"),
-                base,
-            )
+            # Patch trước khi warp
+            cv.imwrite(f"{debug_dir}/region_{wi:02d}_a_original.png", patch)
+
+            # Patch sau local H
+            cv.imwrite(f"{debug_dir}/region_{wi:02d}_b_H_warped.png", patch_H)
+
+            # Patch sau IDW patch refinement
+            cv.imwrite(f"{debug_dir}/region_{wi:02d}_c_idw_refined.png", patch_refined)
+
+            # Ink mask
+            cv.imwrite(f"{debug_dir}/region_{wi:02d}_d_ink_mask.png", mask_ink * 255)
+
+            # Progressive result
+            cv.imwrite(f"{debug_dir}/step_region_{wi:02d}.png", base)
 
     return base

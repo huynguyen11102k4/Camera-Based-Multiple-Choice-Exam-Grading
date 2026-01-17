@@ -16,7 +16,8 @@ def extract_template(path_img, path_out=TEMPLATE_LAYOUT_FILE, debug_dir=None):
     detections = detect_tags(gray)
 
     if debug_dir:
-        safe_mkdir(debug_dir)
+        vis = draw_detections(img, detections)
+        cv.imwrite(f"{debug_dir}/step1_template_markers.png", vis)
 
     layout = {}
     for d in detections:

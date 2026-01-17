@@ -12,9 +12,16 @@ def safe_mkdir(path: str):
     os.makedirs(path, exist_ok=True)
 
 
-def safe_imwrite(path: str, img: np.ndarray, note: str = ""):
-    # Debug image writing disabled to improve performance
-    return
+def safe_imwrite(path, img):
+    import cv2 as cv
+    import numpy as np
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    if img.dtype != np.uint8:
+        img = np.clip(img, 0, 255).astype(np.uint8)
+
+    cv.imwrite(path, img)
+
 
 
 def draw_detections(img_bgr, detections, draw_ids=True, color=(0, 255, 0)):
