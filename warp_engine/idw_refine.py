@@ -10,7 +10,7 @@ from .utils import safe_imwrite
 log = logging.getLogger(__name__)
 
 
-def idw_refine(warped, layout, grid=(32, 24), power=1.0, eps=1e-3, debug_dir=None):
+def idw_refine(warped, layout, grid=(48, 36), power=2.0, eps=1e-3, output=None, debug=False):
     H_img, W_img = warped.shape[:2]
     gray = cv.cvtColor(warped, cv.COLOR_BGR2GRAY)
     detections = detect_tags(gray)
@@ -58,7 +58,7 @@ def idw_refine(warped, layout, grid=(32, 24), power=1.0, eps=1e-3, debug_dir=Non
 
     refined = cv.remap(warped, map_x, map_y, cv.INTER_LINEAR)
 
-    if debug_dir:
-        safe_imwrite(os.path.join(debug_dir, "step3_idw_refined.png"), refined)
+    if debug:
+        safe_imwrite(os.path.join(output, "step3_idw_refined.png"), refined)
 
     return refined

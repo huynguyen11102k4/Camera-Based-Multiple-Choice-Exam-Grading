@@ -286,11 +286,11 @@ class OMRProcessor:
         )
         return vis
 
-    def run(self, a4_img: np.ndarray, debug_dir=None) -> Dict:
+    def run(self, a4_img: np.ndarray, output=None, debug=False) -> Dict:
         gray = self._prep_gray(a4_img)
 
-        if debug_dir:
-            cv.imwrite(f"{debug_dir}/omr_1_preprocessed_gray.png", gray)
+        if debug:
+            cv.imwrite(f"{output}/omr_1_preprocessed_gray.png", gray)
 
         score_cache: Dict[Tuple[int, int], float] = {}
         for roi in self.circle_rois:
@@ -306,7 +306,7 @@ class OMRProcessor:
         vis = self._draw_overlay(a4_img, score_cache, answers)
         vis = self._draw_score(vis, score, len(self.answer_key))
 
-        if debug_dir:
+        if debug:
             score_img = a4_img.copy()
 
             for (q, opt), score in score_cache.items():
@@ -321,7 +321,7 @@ class OMRProcessor:
                            (roi.cx - 15, roi.cy + 5),
                            cv.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
 
-            cv.imwrite(f"{debug_dir}/omr_2_score_heatmap.png", score_img)
+            cv.imwrite(f"{output}/omr_2_score_heatmap.png", score_img)
 
         return {
             "answers": answers,

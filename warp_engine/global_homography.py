@@ -19,13 +19,13 @@ def collect_correspondences(detections, layout):
     return np.array(src), np.array(dst)
 
 
-def compute_global_h(img, layout, debug_dir=None):
+def compute_global_h(img, layout, output=None, debug=False):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     detections = detect_tags(gray)
 
-    if debug_dir:
+    if debug:
         vis = draw_detections(img, detections)
-        cv.imwrite(f"{debug_dir}/step2_input_markers.png", vis)
+        cv.imwrite(f"{output}/step2_input_markers.png", vis)
 
     src, dst = collect_correspondences(detections, layout)
 
@@ -33,8 +33,8 @@ def compute_global_h(img, layout, debug_dir=None):
     if H is None:
         raise RuntimeError("Global homography failed")
 
-    if debug_dir:
+    if debug:
         warped = cv.warpPerspective(img, H, A4_PX)
-        cv.imwrite(f"{debug_dir}/step3_global_H_warp.png", warped)
+        cv.imwrite(f"{output}/step3_global_H_warp.png", warped)
 
     return H, detections

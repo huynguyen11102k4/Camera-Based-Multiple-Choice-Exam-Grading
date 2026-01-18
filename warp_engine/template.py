@@ -9,15 +9,15 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def extract_template(path_img, path_out=TEMPLATE_LAYOUT_FILE, debug_dir=None):
+def extract_template(path_img, path_out=TEMPLATE_LAYOUT_FILE, output=None, debug=False):
     img = cv.imread(path_img)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
     detections = detect_tags(gray)
 
-    if debug_dir:
+    if debug:
         vis = draw_detections(img, detections)
-        cv.imwrite(f"{debug_dir}/step1_template_markers.png", vis)
+        cv.imwrite(f"{output}/step1_template_markers.png", vis)
 
     layout = {}
     for d in detections:

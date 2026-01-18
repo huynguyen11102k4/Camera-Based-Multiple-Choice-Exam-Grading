@@ -1,6 +1,5 @@
 import cv2 as cv
 import numpy as np
-import os
 
 from .config import WINDOWS_4PTS
 from .detector import detect_tags
@@ -26,7 +25,7 @@ def bbox_from_template(ids, layout, img_shape, margin=10):
     return x_min, y_min, x_max, y_max
 
 
-def refine_regions(template_img, layout, warped_src, windows=WINDOWS_4PTS, debug_dir=None):
+def refine_regions(template_img, layout, warped_src, windows=WINDOWS_4PTS, output=None, debug=False):
     base = template_img.copy()
     gray = cv.cvtColor(warped_src, cv.COLOR_BGR2GRAY)
     dets = {d.id: d for d in detect_tags(gray)}
@@ -57,42 +56,68 @@ def refine_regions(template_img, layout, warped_src, windows=WINDOWS_4PTS, debug
             borderMode=cv.BORDER_REPLICATE,
         )
 
-        src_local_H = cv.perspectiveTransform(
-            src.reshape(-1, 1, 2), H
-        ).reshape(-1, 2)
+        src_before_H = src  # (N, 2)
 
-        patch_refined = refine_idw_patch(
-            patch_H,
-            src_local=src_local_H,
-            dst_local=dst,
-            grid_shape=(12, 12),
-            idw_power=3.0,
-        )
+        dst_ideal = dst
+
+        residuals_before = src_before_H - dst_ideal
+
+        max_residual_before = np.linalg.norm(residuals_before, axis=1).max()
+
+        if max_residual_before > 15.0:
+            h_correction_factor = 0.30
+        elif max_residual_before > 8.0:
+            h_correction_factor = 0.20
+        elif max_residual_before > 3.0:
+            h_correction_factor = 0.15
+        else:
+            h_correction_factor = 0.25
+
+        residuals_after = residuals_before * h_correction_factor
+        src_estimated_after_H = dst_ideal + residuals_after
+
+        dst_local = dst_ideal
+
+        max_residual_before = np.linalg.norm(residuals_before, axis=1).max()
+        max_residual_estimated = np.linalg.norm(residuals_after, axis=1).max()
+
+        if debug:
+            with open(f"{output}/idw_residuals.txt", "a", encoding="utf-8") as f:
+                f.write(f"Region {wi}:\n")
+                f.write(f"  Residuals before Local H: max={max_residual_before:.3f}px\n")
+                f.write(f"  Estimated after H (x{h_correction_factor}): max={max_residual_estimated:.3f}px\n")
+                for i, mid in enumerate(ids):
+                    res_before = np.linalg.norm(residuals_before[i])
+                    res_after = np.linalg.norm(residuals_after[i])
+                    f.write(f"    Marker {mid}: {res_before:.3f}px -> {res_after:.3f}px\n")
+
+        # Skip IDW nếu residuals quá nhỏ
+        if max_residual_estimated < 0.5:
+            patch_refined = patch_H
+            if debug:
+                with open(f"{output}/idw_residuals.txt", "a", encoding="utf-8") as f:
+                    f.write(f"  -> Skipped IDW (residuals < 0.5px)\n")
+        else:
+            patch_refined = refine_idw_patch(
+                patch_H,
+                src_local=src_estimated_after_H,
+                dst_local=dst_local,
+                grid_shape=(24, 24),
+                idw_power=2.5,
+            )
 
         base_patch = base[y0:y1, x0:x1]
 
         base_patch[:] = 255
 
-        mask_ink = binarize_patch_dual(patch_refined, debug_dir=debug_dir, region_id=wi)
+        mask_ink = binarize_patch_dual(patch_refined)
 
-        base_patch[mask_ink] = (0, 0, 0)
+        base_patch[mask_ink] = 0
 
-        base[y0:y1, x0:x1] = base_patch
-
-        if debug_dir:
-            # Patch trước khi warp
-            cv.imwrite(f"{debug_dir}/region_{wi:02d}_a_original.png", patch)
-
-            # Patch sau local H
-            cv.imwrite(f"{debug_dir}/region_{wi:02d}_b_H_warped.png", patch_H)
-
-            # Patch sau IDW patch refinement
-            cv.imwrite(f"{debug_dir}/region_{wi:02d}_c_idw_refined.png", patch_refined)
-
-            # Ink mask
-            cv.imwrite(f"{debug_dir}/region_{wi:02d}_d_ink_mask.png", mask_ink * 255)
-
-            # Progressive result
-            cv.imwrite(f"{debug_dir}/step_region_{wi:02d}.png", base)
+        if debug:
+            cv.imwrite(f"{output}/step4_region_{wi:02d}_a_original.png", patch)
+            cv.imwrite(f"{output}/step4_region_{wi:02d}_b_H_warped_and_IDW_refined.png", patch_refined)
+            cv.imwrite(f"{output}/step4_region_{wi:02d}_c_ink_mask.png", mask_ink.astype(np.uint8) * 255)
+            cv.imwrite(f"{output}/step5_merge_region_{wi:02d}.png", base)
 
     return base

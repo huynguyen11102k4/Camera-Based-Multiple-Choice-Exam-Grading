@@ -22,11 +22,12 @@ class WarpEngine:
             self,
             img,
             out_size=A4_PX,
-            debug_dir=None,
+            output=None,
             use_global_idw=True,
             use_region_refine=True,
+            debug=False,
     ):
-        H, _ = compute_global_h(img, self.layout, None)
+        H, _ = compute_global_h(img, self.layout, output, debug)
 
         warped_src = cv.warpPerspective(img, H, out_size)
 
@@ -34,7 +35,8 @@ class WarpEngine:
             warped_src = idw_refine(
                 warped_src,
                 self.layout,
-                debug_dir=debug_dir,
+                output=output,
+                debug=debug,
             )
 
         base = self.template_img.copy()
@@ -44,7 +46,8 @@ class WarpEngine:
                 template_img=base,
                 layout=self.layout,
                 warped_src=warped_src,
-                debug_dir=debug_dir,
+                output=output,
+                debug=debug,
             )
 
         return base

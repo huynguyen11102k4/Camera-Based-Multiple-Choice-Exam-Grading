@@ -16,7 +16,8 @@ from orm import OMRProcessor, load_circle_rois
 
 INPUT_IMAGE = "samples/1photo2.jpg"              # ảnh chụp cần warp
 TEMPLATE_IMAGE = "samples/template_scan1.png"    # ảnh template
-OUT_DIR = "debug_markers"
+OUTPUT = "results"
+DEBUG_MODE = False
 
 CIRCLE_ROIS_JSON = "circle_rois.json"
 ANSWER_KEY_JSON = "answer_key.json"
@@ -33,14 +34,15 @@ def log_time(name: str, start: float):
 def main():
     t_total = time.perf_counter()
 
-    safe_mkdir(OUT_DIR)
+    safe_mkdir(OUTPUT)
 
     t = time.perf_counter()
     if not USE_EXISTING_TEMPLATE:
         extract_template(
             TEMPLATE_IMAGE,
             TEMPLATE_LAYOUT_FILE,
-            OUT_DIR
+            OUTPUT,
+            DEBUG_MODE
         )
     else:
         if not os.path.exists(TEMPLATE_LAYOUT_FILE):
@@ -66,9 +68,10 @@ def main():
     t = time.perf_counter()
     warped_a4 = warp_engine.warp(
         img,
-        debug_dir=OUT_DIR,
+        output=OUTPUT,
         use_global_idw=True,
         use_region_refine=True,
+        debug=DEBUG_MODE,
     )
     log_time("Warp to A4", t)
 
@@ -93,12 +96,15 @@ def main():
     log_time("Init OMRProcessor", t)
 
     t = time.perf_counter()
-    omr_result = omr.run(warped_a4, debug_dir=OUT_DIR)
+    omr_result = omr.run(warped_a4, output=OUTPUT, debug=DEBUG_MODE)
     log_time("Run OMR", t)
 
     t = time.perf_counter()
     scored_img = omr_result["scored_img"]
-    out_path = os.path.join(OUT_DIR, "warped_a4_scored.png")
+    if DEBUG_MODE:
+        out_path = os.path.join(OUTPUT, "orm_3_scored.png")
+    else:
+        out_path = os.path.join(OUTPUT, "scored_img.png")
     cv.imwrite(out_path, scored_img)
     log_time("Save output image", t)
 
